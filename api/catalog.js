@@ -64,6 +64,9 @@ function categoryIdsFromProduct(p){
 function slugify(s=''){
   return String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'');
 }
+function norm(s=''){
+  return String(s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/&/g,'y').replace(/[^a-z0-9]+/g,' ').trim();
+}
 
 module.exports=async function handler(req,res){
   try{
@@ -147,14 +150,29 @@ module.exports=async function handler(req,res){
       products.filter(p=>p.roots.includes(root.key)).length
     ]));
 
+    const requestedCategory=String(req.query.category||'').trim();
+    const requestedQ=norm(req.query.q||'');
+    const filtered=products.filter(p=>{
+      if(requestedCategory && !p.categoryTrailIds.map(String).includes(requestedCategory)) return false;
+      if(requestedQ){
+        const haystack=norm([p.name,p.reference,p.description,p.category,...p.categories].filter(Boolean).join(' '));
+        if(!haystack.includes(requestedQ)) return false;
+      }
+      return true;
+    });
+
     res.setHeader('Cache-Control','s-maxage=600, stale-while-revalidate=86400');
     res.status(200).json({
       ok:true,
-      total:products.length,
-      products,
+      total:filtered.length,
+      catalogTotal:products.length,
+      hasMore:false,
+      page:1,
+      limit:filtered.length,
+      products:filtered,
       categories,
       counts,
-      note:'Productos activos y visibles asociados a las categorías comerciales principales. Los productos repetidos entre categorías se devuelven una sola vez por ID.'
+      note:'Todos los productos activos y visibles asociados a las categorías comerciales principales se devuelven en una sola respuesta. Los duplicados entre categorías se eliminan por ID.'
     });
   }catch(err){
     res.status(500).json({
